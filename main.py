@@ -3,11 +3,13 @@ import matplotlib.pyplot as plt
 from itertools import permutations
 import multiprocessing as mp
 from tqdm import tqdm
-import os  # Import para manipulação de paths
+import os
 
 # Parâmetros físicos
 k = 10.0
 t = 1.0
+ordem_espalhamento = 4
+num_vizinhos_ra = 6
 
 def load_cluster(filename="clusterxyz.xyz"):
     try:
@@ -19,79 +21,87 @@ def load_cluster(filename="clusterxyz.xyz"):
         print(f"Erro: Arquivo '{filename}' não encontrado.")
         return None
 
-def calcular_intensidades_phi(phi_deg, coords):
+def calcular_intensidades_theta(theta_deg, coords):
     if coords is None:
         return None
 
     emissor_idx = 85
     emissor = coords[emissor_idx]
-    espalhadores = np.delete(coords, emissor_idx, axis=0)
+    restantes = np.delete(coords, emissor_idx, axis=0)
 
-    phi_rad = np.radians(phi_deg)
-    intensidades_phi = []
-    thetas_deg = np.arange(12, 73, 3)
+    distancias = np.linalg.norm(restantes - emissor, axis=1)
+    indices_ra = np.argsort(distancias)[:num_vizinhos_ra]
+    espalhadores = restantes[indices_ra]
 
-    for theta_deg in thetas_deg:
-        theta_rad = np.radians(theta_deg)
+    phis_deg = np.arange(0, 360, 3)
+    theta_rad = np.radians(theta_deg)
+    intensidades_theta = []
+
+    for phi_deg in phis_deg:
+        phi_rad = np.radians(phi_deg)
+
         detector_dir = np.array([np.sin(theta_rad) * np.cos(phi_rad),
                                  np.sin(theta_rad) * np.sin(phi_rad),
                                  np.cos(theta_rad)])
 
         soma_amplitudes = 0.0 + 0.0j
-        for i, j in permutations(range(len(espalhadores)), 2):
-            a1 = espalhadores[i]
-            a2 = espalhadores[j]
 
-            r01 = np.linalg.norm(a1 - emissor)
-            r12 = np.linalg.norm(a2 - a1)
+        for caminho in permutations(range(num_vizinhos_ra), ordem_espalhamento):
+            pontos = [emissor] + [espalhadores[i] for i in caminho]
 
-            if r01 == 0 or r12 == 0:
-                continue
+            R_total = 0.0
+            denominador = 1.0
 
-            fase_final = np.dot(a2, detector_dir)
-            R_total = r01 + r12
-            fase = np.exp(1j * (k * R_total + k * fase_final))
-            A = (t**2) / (r01 * r12) * fase
-            soma_amplitudes += A
+            for i in range(len(pontos) - 1):
+                r = np.linalg.norm(pontos[i+1] - pontos[i])
+                if r == 0:
+                    break
+                R_total += r
+                denominador *= r
+            else:
+                fase_final = np.dot(pontos[-1], detector_dir)
+                fase = np.exp(1j * (k * R_total + k * fase_final))
+                A = (t ** ordem_espalhamento) / denominador * fase
+                soma_amplitudes += A
 
-        intensidade = np.abs(soma_amplitudes)**2
-        intensidades_phi.append(intensidade)
+        intensidade = np.abs(soma_amplitudes) ** 2
+        intensidades_theta.append(intensidade)
 
-    # Cria o diretório para salvar as figuras se não existir
-    output_dir = "xpd_curvas"
+    output_dir = "xpd_curvas_phi_vs_theta"
     os.makedirs(output_dir, exist_ok=True)
-    filename = os.path.join(output_dir, f'xpd_curva_phi_{phi_deg}.png')
+    filename = os.path.join(output_dir, f'xpd_curva_theta_{theta_deg}.png')
 
     plt.figure(figsize=(8, 5))
-    plt.plot(thetas_deg, intensidades_phi, color='darkgreen')
-    plt.xlabel("Ângulo polar $\\theta$ (graus)")
+    plt.plot(phis_deg, intensidades_theta, color='darkred')
+    plt.xlabel("Ângulo azimutal $\\phi$ (graus)")
     plt.ylabel("Intensidade (a.u.)")
-    plt.title(f"Curva de difração XPD para $\\phi = {phi_deg}^\circ$ (ordem 2)")
+    plt.title(f"Curva XPD para $\\theta = {theta_deg}^\circ$ (ordem {ordem_espalhamento}, R-A {num_vizinhos_ra})")
     plt.grid(True)
     plt.tight_layout()
     plt.savefig(filename)
     plt.close()
 
-    return f"Figura salva em: {filename}"
+    return f"Figura salva: {filename}"
 
-def process_phi(phi_deg, coords):
-    return calcular_intensidades_phi(phi_deg, coords)
+def process_theta(theta_deg, coords):
+    return calcular_intensidades_theta(theta_deg, coords)
 
 if __name__ == '__main__':
-    phis_deg = np.arange(0, 360, 3)
-    num_cores = 10  # Defina o número de núcleos que você quer usar
+    thetas_deg = np.arange(12, 73, 3)
+    num_cores = 10
     pool = mp.Pool(processes=num_cores)
     coords = load_cluster()
 
     if coords is not None:
-        tasks = [(phi, coords) for phi in phis_deg]
+        tasks = [(theta, coords) for theta in thetas_deg]
         results = []
-        for result in tqdm(pool.starmap(process_phi, tasks), total=len(phis_deg), desc="Processando ângulos phi"):
+        for result in tqdm(pool.starmap(process_theta, tasks), total=len(thetas_deg), desc="Processando ângulos theta"):
             results.append(result)
 
         pool.close()
         pool.join()
 
-        print(f"Foram processados {len(phis_deg)} ângulos phi e as figuras foram salvas na pasta 'xpd_curvas'.")
+        print(f"Foram processados {len(thetas_deg)} ângulos theta. Figuras salvas na pasta 'xpd_curvas_phi_vs_theta'.")
     else:
-        print("O programa foi encerrado devido a um erro no carregamento do arquivo do cluster.")
+        print("Erro ao carregar o arquivo do cluster.")
+
