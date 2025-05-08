@@ -9,8 +9,9 @@ import os
 k = 10.0
 t = 1.0
 ordem_espalhamento = 4
-num_vizinhos_ra = 6
+num_vizinhos_ra = 8
 
+# Função para carregar o cluster
 def load_cluster(filename="clusterxyz.xyz"):
     try:
         with open(filename, "r") as f:
@@ -21,6 +22,7 @@ def load_cluster(filename="clusterxyz.xyz"):
         print(f"Erro: Arquivo '{filename}' não encontrado.")
         return None
 
+# Função para calcular as intensidades para um ângulo theta
 def calcular_intensidades_theta(theta_deg, coords):
     if coords is None:
         return None
@@ -37,7 +39,8 @@ def calcular_intensidades_theta(theta_deg, coords):
     theta_rad = np.radians(theta_deg)
     intensidades_theta = []
 
-    for phi_deg in phis_deg:
+    # Barra de progresso para o cálculo das intensidades em função de phi
+    for phi_deg in tqdm(phis_deg, desc=f"Calculando intensidades para θ = {theta_deg}", unit="phi"):
         phi_rad = np.radians(phi_deg)
 
         detector_dir = np.array([np.sin(theta_rad) * np.cos(phi_rad),
@@ -46,6 +49,7 @@ def calcular_intensidades_theta(theta_deg, coords):
 
         soma_amplitudes = 0.0 + 0.0j
 
+        # Loop sobre as permutações dos caminhos de espalhamento
         for caminho in permutations(range(num_vizinhos_ra), ordem_espalhamento):
             pontos = [emissor] + [espalhadores[i] for i in caminho]
 
@@ -83,17 +87,20 @@ def calcular_intensidades_theta(theta_deg, coords):
 
     return f"Figura salva: {filename}"
 
+# Função que chama o cálculo para cada ângulo θ
 def process_theta(theta_deg, coords):
     return calcular_intensidades_theta(theta_deg, coords)
 
 if __name__ == '__main__':
-    thetas_deg = np.arange(12, 73, 3)
-    num_cores = 10
+    thetas_deg = np.arange(12, 73, 3)  # Defina os ângulos theta
+    num_cores = 10  # Número de núcleos que deseja usar
     pool = mp.Pool(processes=num_cores)
     coords = load_cluster()
 
     if coords is not None:
         tasks = [(theta, coords) for theta in thetas_deg]
+
+        # Barra de progresso para o processamento dos ângulos theta
         results = []
         for result in tqdm(pool.starmap(process_theta, tasks), total=len(thetas_deg), desc="Processando ângulos theta"):
             results.append(result)
@@ -104,3 +111,4 @@ if __name__ == '__main__':
         print(f"Foram processados {len(thetas_deg)} ângulos theta. Figuras salvas na pasta 'xpd_curvas_phi_vs_theta'.")
     else:
         print("Erro ao carregar o arquivo do cluster.")
+
