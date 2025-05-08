@@ -104,4 +104,3 @@ if __name__ == '__main__':
         print(f"Foram processados {len(thetas_deg)} ângulos theta. Figuras salvas na pasta 'xpd_curvas_phi_vs_theta'.")
     else:
         print("Erro ao carregar o arquivo do cluster.")
-
